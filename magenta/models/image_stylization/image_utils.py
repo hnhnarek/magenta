@@ -21,17 +21,16 @@ import io
 import os
 import tempfile
 
-# internal imports
 
 import numpy as np
 import scipy
 import scipy.misc
 import tensorflow as tf
 
-from tensorflow.python.ops import control_flow_ops
-from tensorflow.python.platform import resource_loader
-
 from magenta.models.image_stylization import imagenet_data
+from tensorflow.python.framework import dtypes
+from tensorflow.python.ops import random_ops
+
 
 slim = tf.contrib.slim
 
@@ -98,26 +97,22 @@ def imagenet_inputs(batch_size, image_size, num_readers=1,
         dtypes=[tf.string])
 
     # Create multiple readers to populate the queue of examples.
-    if num_readers > 1:
-      enqueue_ops = []
-      for _ in range(num_readers):
-        reader = imagenet.reader()
-        _, value = reader.read(filename_queue)
-        enqueue_ops.append(examples_queue.enqueue([value]))
-
-      tf.train.queue_runner.add_queue_runner(
-          tf.train.queue_runner.QueueRunner(examples_queue, enqueue_ops))
-      example_serialized = examples_queue.dequeue()
-    else:
+    enqueue_ops = []
+    for _ in range(num_readers):
       reader = imagenet.reader()
-      _, example_serialized = reader.read(filename_queue)
+      _, value = reader.read(filename_queue)
+      enqueue_ops.append(examples_queue.enqueue([value]))
+
+    tf.train.queue_runner.add_queue_runner(
+        tf.train.queue_runner.QueueRunner(examples_queue, enqueue_ops))
+    example_serialized = examples_queue.dequeue()
 
     images_and_labels = []
     for _ in range(num_preprocess_threads):
       # Parse a serialized Example proto to extract the image and metadata.
       image_buffer, label_index, _, _ = _parse_example_proto(
           example_serialized)
-      image = _decode_jpeg(image_buffer)
+      image = tf.image.decode_jpeg(image_buffer, channels=3)
 
       # pylint: disable=protected-access
       image = _aspect_preserving_resize(image, image_size + 2)
@@ -136,14 +131,14 @@ def imagenet_inputs(batch_size, image_size, num_readers=1,
     images = tf.reshape(images, shape=[batch_size, image_size, image_size, 3])
 
     # Display the training images in the visualizer.
-    tf.image_summary('images', images)
+    tf.summary.image('images', images)
 
     return images, tf.reshape(label_index_batch, [batch_size])
 
 
 def style_image_inputs(style_dataset_file, batch_size=None, image_size=None,
                        square_crop=False, shuffle=True):
-  """Loads a style image at random.
+  """Loads a batch of random style image given the path of tfrecord dataset.
 
   Args:
     style_dataset_file: str, path to the tfrecord dataset of style files.
@@ -241,6 +236,150 @@ def style_image_inputs(style_dataset_file, batch_size=None, image_size=None,
     return image, label, gram_matrices
 
 
+def arbitrary_style_image_inputs(style_dataset_file,
+                                 batch_size=None,
+                                 image_size=None,
+                                 center_crop=True,
+                                 shuffle=True,
+                                 augment_style_images=False,
+                                 random_style_image_size=False,
+                                 min_rand_image_size=128,
+                                 max_rand_image_size=300):
+  """Loads a batch of random style image given the path of tfrecord dataset.
+
+  This method does not return pre-compute Gram matrices for the images like
+  style_image_inputs. But it can provide data augmentation. If
+  augment_style_images is equal to True, then style images will randomly
+  modified (eg. changes in brightness, hue or saturation) for data
+  augmentation. If random_style_image_size is set to True then all images
+  in one batch will be resized to a random size.
+  Args:
+    style_dataset_file: str, path to the tfrecord dataset of style files.
+    batch_size: int. If provided, batches style images. Defaults to None.
+    image_size: int. The images will be resized bilinearly so that the smallest
+        side has size image_size. Defaults to None.
+    center_crop: bool. If True, center-crops to [image_size, image_size].
+        Defaults to False.
+    shuffle: bool, whether to shuffle style files at random. Defaults to False.
+    augment_style_images: bool. Wheather to augment style images or not.
+    random_style_image_size: bool. If this value is True, then all the style
+        images in one batch will be resized to a random size between
+        min_rand_image_size and max_rand_image_size.
+    min_rand_image_size: int. If random_style_image_size is True, this value
+        specifies the minimum image size.
+    max_rand_image_size: int. If random_style_image_size is True, this value
+        specifies the maximum image size.
+
+  Returns:
+    4-D tensor of shape [1, ?, ?, 3] with values in [0, 1] for the style
+    image (with random changes for data augmentation if
+    augment_style_image_size is set to true), and 0-D tensor for the style
+    label, 4-D tensor of shape [1, ?, ?, 3] with values in [0, 1] for the style
+    image without random changes for data augmentation.
+
+  Raises:
+    ValueError: if center cropping is requested but no image size is provided,
+        or if batch size is specified but center-cropping or
+        augment-style-images is not requested,
+        or if both augment-style-images and center-cropping are requested.
+  """
+  if center_crop and image_size is None:
+    raise ValueError('center-cropping requires specifying the image size.')
+  if center_crop and augment_style_images:
+    raise ValueError(
+        'When augment_style_images is true images will be randomly cropped.')
+  if batch_size is not None and not center_crop and not augment_style_images:
+    raise ValueError(
+        'batching requires same image sizes (Set center-cropping or '
+        'augment_style_images to true)')
+
+  with tf.name_scope('style_image_processing'):
+    # Force all input processing onto CPU in order to reserve the GPU for the
+    # forward inference and back-propagation.
+    with tf.device('/cpu:0'):
+      filename_queue = tf.train.string_input_producer(
+          [style_dataset_file],
+          shuffle=False,
+          capacity=1,
+          name='filename_queue')
+      if shuffle:
+        examples_queue = tf.RandomShuffleQueue(
+            capacity=64,
+            min_after_dequeue=32,
+            dtypes=[tf.string],
+            name='random_examples_queue')
+      else:
+        examples_queue = tf.FIFOQueue(
+            capacity=64, dtypes=[tf.string], name='fifo_examples_queue')
+      reader = tf.TFRecordReader()
+      _, value = reader.read(filename_queue)
+      enqueue_ops = [examples_queue.enqueue([value])]
+      tf.train.queue_runner.add_queue_runner(
+          tf.train.queue_runner.QueueRunner(examples_queue, enqueue_ops))
+      example_serialized = examples_queue.dequeue()
+      features = tf.parse_single_example(
+          example_serialized,
+          features={
+              'label': tf.FixedLenFeature([], tf.int64),
+              'image_raw': tf.FixedLenFeature([], tf.string)
+          })
+      image = tf.image.decode_jpeg(features['image_raw'])
+      image.set_shape([None, None, 3])
+      label = features['label']
+
+      if image_size is not None:
+        image_channels = image.shape[2].value
+        if augment_style_images:
+          image_orig = image
+          image = tf.image.random_brightness(image, max_delta=0.8)
+          image = tf.image.random_saturation(image, lower=0.5, upper=1.5)
+          image = tf.image.random_hue(image, max_delta=0.2)
+          image = tf.image.random_flip_left_right(image)
+          image = tf.image.random_flip_up_down(image)
+          random_larger_image_size = random_ops.random_uniform(
+              [],
+              minval=image_size + 2,
+              maxval=image_size + 200,
+              dtype=dtypes.int32)
+          image = _aspect_preserving_resize(image, random_larger_image_size)
+          image = tf.random_crop(
+              image, size=[image_size, image_size, image_channels])
+          image.set_shape([image_size, image_size, image_channels])
+
+          image_orig = _aspect_preserving_resize(image_orig, image_size + 2)
+          image_orig = _central_crop([image_orig], image_size, image_size)[0]
+          image_orig.set_shape([image_size, image_size, 3])
+        elif center_crop:
+          image = _aspect_preserving_resize(image, image_size + 2)
+          image = _central_crop([image], image_size, image_size)[0]
+          image.set_shape([image_size, image_size, image_channels])
+          image_orig = image
+        else:
+          image = _aspect_preserving_resize(image, image_size)
+          image_orig = image
+
+      image = tf.to_float(image) / 255.0
+      image_orig = tf.to_float(image_orig) / 255.0
+
+      if batch_size is None:
+        image = tf.expand_dims(image, 0)
+      else:
+        [image, image_orig, label] = tf.train.batch(
+            [image, image_orig, label], batch_size=batch_size)
+
+      if random_style_image_size:
+        # Selects a random size for the style images and resizes all the images
+        # in the batch to that size.
+        image = _aspect_preserving_resize(image,
+                                          random_ops.random_uniform(
+                                              [],
+                                              minval=min_rand_image_size,
+                                              maxval=max_rand_image_size,
+                                              dtype=dtypes.int32))
+
+      return image, label, image_orig
+
+
 def load_np_image(image_file):
   """Loads an image as a numpy array.
 
@@ -251,28 +390,41 @@ def load_np_image(image_file):
     A 3-D numpy array of shape [image_size, image_size, 3] and dtype float32,
     with values in [0, 1].
   """
+  return np.float32(load_np_image_uint8(image_file) / 255.0)
+
+
+def load_np_image_uint8(image_file):
+  """Loads an image as a numpy array.
+
+  Args:
+    image_file: str. Image file.
+
+  Returns:
+    A 3-D numpy array of shape [image_size, image_size, 3] and dtype uint8,
+    with values in [0, 255].
+  """
   with tempfile.NamedTemporaryFile() as f:
-    f.write(tf.gfile.GFile(image_file).read())
+    f.write(tf.gfile.GFile(image_file, 'rb').read())
     f.flush()
     image = scipy.misc.imread(f.name)
     # Workaround for black-and-white images
     if image.ndim == 2:
       image = np.tile(image[:, :, None], (1, 1, 3))
-    return np.float32(image / 255.0)
+    return image
 
 
-def save_np_image(image, output_file):
+def save_np_image(image, output_file, save_format='jpeg'):
   """Saves an image to disk.
 
   Args:
     image: 3-D numpy array of shape [image_size, image_size, 3] and dtype
         float32, with values in [0, 1].
     output_file: str, output file.
+    save_format: format for saving image (eg. jpeg).
   """
-  _, ext = os.path.splitext(output_file)
   image = np.uint8(image * 255.0)
   buf = io.BytesIO()
-  scipy.misc.imsave(buf, np.squeeze(image, 0), format=ext[1:])
+  scipy.misc.imsave(buf, np.squeeze(image, 0), format=save_format)
   buf.seek(0)
   f = tf.gfile.GFile(output_file, 'w')
   f.write(buf.getvalue())
@@ -297,7 +449,7 @@ def load_image(image_file, image_size=None):
     small_side = min(image.get_shape()[0].value, image.get_shape()[1].value)
     image = tf.image.resize_image_with_crop_or_pad(
         image, small_side, small_side)
-    image = tf.image.resize_images(image, image_size, image_size)
+    image = tf.image.resize_images(image, [image_size, image_size])
   image = tf.to_float(image) / 255.0
 
   return tf.expand_dims(image, 0)
@@ -315,13 +467,13 @@ def load_evaluation_images(image_size):
   Raises:
     IOError: If no evaluation images can be found.
   """
-  glob = os.path.join(resource_loader.get_data_files_path(),
+  glob = os.path.join(tf.resource_loader.get_data_files_path(),
                       _EVALUATION_IMAGES_GLOB)
   evaluation_images = tf.gfile.Glob(glob)
   if not evaluation_images:
     raise IOError('No evaluation images found')
   return tf.concat(
-      0, [load_image(path, image_size) for path in evaluation_images])
+      [load_image(path, image_size) for path in evaluation_images], 0)
 
 
 def form_image_grid(input_tensor, grid_shape, image_shape, num_channels):
@@ -400,9 +552,8 @@ def _crop(image, offset_height, offset_width, crop_height, crop_width):
   rank_assertion = tf.Assert(
       tf.equal(tf.rank(image), 3),
       ['Rank of image must be equal to 3.'])
-  cropped_shape = control_flow_ops.with_dependencies(
-      [rank_assertion],
-      tf.pack([crop_height, crop_width, original_shape[2]]))
+  with tf.control_dependencies([rank_assertion]):
+    cropped_shape = tf.stack([crop_height, crop_width, original_shape[2]])
 
   size_assertion = tf.Assert(
       tf.logical_and(
@@ -410,13 +561,13 @@ def _crop(image, offset_height, offset_width, crop_height, crop_width):
           tf.greater_equal(original_shape[1], crop_width)),
       ['Crop size greater than the image size.'])
 
-  offsets = tf.to_int32(tf.pack([offset_height, offset_width, 0]))
+  offsets = tf.to_int32(tf.stack([offset_height, offset_width, 0]))
 
-  # Use tf.slice instead of crop_to_bounding box as it accepts tensors to
-  # define the crop size.
-  image = control_flow_ops.with_dependencies(
-      [size_assertion],
-      tf.slice(image, offsets, cropped_shape))
+  # Use tf.strided_slice instead of crop_to_bounding box as it accepts tensors
+  # to define the crop size.
+  with tf.control_dependencies([size_assertion]):
+    image = tf.strided_slice(image, offsets, offsets + cropped_shape,
+                             strides=tf.ones_like(offsets))
   return tf.reshape(image, cropped_shape)
 
 
@@ -479,49 +630,31 @@ def _aspect_preserving_resize(image, smallest_side):
   """Resize images preserving the original aspect ratio.
 
   Args:
-    image: A 3-D image `Tensor`.
+    image: A 3-D image or a 4-D batch of images `Tensor`.
     smallest_side: A python integer or scalar `Tensor` indicating the size of
       the smallest side after resize.
 
   Returns:
-    resized_image: A 3-D tensor containing the resized image.
+    resized_image: A 3-D or 4-D tensor containing the resized image(s).
   """
   smallest_side = tf.convert_to_tensor(smallest_side, dtype=tf.int32)
 
+  input_rank = len(image.get_shape())
+  if input_rank == 3:
+    image = tf.expand_dims(image, 0)
+
   shape = tf.shape(image)
-  height = shape[0]
-  width = shape[1]
+  height = shape[1]
+  width = shape[2]
   new_height, new_width = _smallest_size_at_least(height, width, smallest_side)
-  image = tf.expand_dims(image, 0)
   resized_image = tf.image.resize_bilinear(image, [new_height, new_width],
                                            align_corners=False)
-  resized_image = tf.squeeze(resized_image)
-  resized_image.set_shape([None, None, 3])
+  if input_rank == 3:
+    resized_image = tf.squeeze(resized_image)
+    resized_image.set_shape([None, None, 3])
+  else:
+    resized_image.set_shape([None, None, None, 3])
   return resized_image
-
-
-def _decode_jpeg(image_buffer, scope=None):
-  """Decode a JPEG string into one 3-D float image Tensor.
-
-  Args:
-    image_buffer: scalar string Tensor.
-    scope: Optional scope for op_scope.
-
-  Returns:
-    3-D float Tensor with values ranging from [0, 1).
-  """
-  with tf.op_scope([image_buffer], scope, 'decode_jpeg'):
-    # Decode the string as an RGB JPEG.
-    # Note that the resulting image contains an unknown height and width
-    # that is set dynamically by decode_jpeg. In other words, the height
-    # and width of image is unknown at compile-time.
-    image = tf.image.decode_jpeg(image_buffer, channels=3)
-
-    # After this point, all image pixels reside in [0,1)
-    # until the very end, when they're rescaled to (-1, 1).  The various
-    # adjust_* ops all require this range for dtype float.
-    image = tf.image.convert_image_dtype(image, dtype=tf.float32)
-    return image
 
 
 def _parse_example_proto(example_serialized):
@@ -585,7 +718,7 @@ def _parse_example_proto(example_serialized):
   ymax = tf.expand_dims(features['image/object/bbox/ymax'].values, 0)
 
   # Note that we impose an ordering of (y, x) just to make life difficult.
-  bbox = tf.concat(0, [ymin, xmin, ymax, xmax])
+  bbox = tf.concat([ymin, xmin, ymax, xmax], 0)
 
   # Force the variable number of bounding boxes into the shape
   # [1, num_boxes, coords].
@@ -593,3 +726,43 @@ def _parse_example_proto(example_serialized):
   bbox = tf.transpose(bbox, [0, 2, 1])
 
   return features['image/encoded'], label, bbox, features['image/class/text']
+
+
+def center_crop_resize_image(image, image_size):
+  """Center-crop into a square and resize to image_size.
+
+  Args:
+    image: A 3-D image `Tensor`.
+    image_size: int, Desired size. Crops the image to a square and resizes it
+      to the requested size.
+
+  Returns:
+    A 4-D tensor of shape [1, image_size, image_size, 3] and dtype float32,
+    with values in [0, 1].
+  """
+  shape = tf.shape(image)
+  small_side = tf.minimum(shape[0], shape[1])
+  image = tf.image.resize_image_with_crop_or_pad(image, small_side, small_side)
+  image = tf.to_float(image) / 255.0
+
+  image = tf.image.resize_images(image, tf.constant([image_size, image_size]))
+
+  return tf.expand_dims(image, 0)
+
+
+def resize_image(image, image_size):
+  """Resize input image preserving the original aspect ratio.
+
+  Args:
+    image: A 3-D image `Tensor`.
+    image_size: int, desired size of the smallest size of image after resize.
+
+  Returns:
+    A 4-D tensor of shape [1, image_size, image_size, 3] and dtype float32,
+    with values in [0, 1].
+  """
+  image = _aspect_preserving_resize(image, image_size)
+  image = tf.to_float(image) / 255.0
+
+  return tf.expand_dims(image, 0)
+

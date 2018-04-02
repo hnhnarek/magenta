@@ -17,36 +17,9 @@ import random
 
 # internal imports
 import numpy as np
-import tensorflow as tf
 
-from magenta.music import sequences_lib
 from magenta.pipelines import pipeline
 from magenta.pipelines import statistics
-from magenta.protobuf import music_pb2
-
-
-class Quantizer(pipeline.Pipeline):
-  """A Module that quantizes NoteSequence data."""
-
-  def __init__(self, steps_per_quarter=4, filter_drums=True):
-    super(Quantizer, self).__init__(
-        input_type=music_pb2.NoteSequence,
-        output_type=sequences_lib.QuantizedSequence)
-    self._steps_per_quarter = steps_per_quarter
-    self._filter_drums = filter_drums
-
-  def transform(self, note_sequence):
-    quantized_sequence = sequences_lib.QuantizedSequence()
-    try:
-      quantized_sequence.from_note_sequence(note_sequence,
-                                            self._steps_per_quarter,
-                                            self._filter_drums)
-      return [quantized_sequence]
-    except sequences_lib.MultipleTimeSignatureException:
-      tf.logging.debug('Multiple time signatures found in NoteSequence')
-      self._set_stats([statistics.Counter(
-          'sequences_discarded_because_multiple_time_signatures', 1)])
-      return []
 
 
 class RandomPartition(pipeline.Pipeline):

@@ -14,12 +14,12 @@
 """Tests for midi_hub."""
 
 import collections
-import Queue
 import threading
 import time
 
 # internal imports
 import mido
+from six.moves import queue as Queue
 import tensorflow as tf
 
 from magenta.common import concurrency
@@ -58,7 +58,7 @@ class MidiHubTest(tf.test.TestCase):
         mido.Message(type='note_off', note=3, time=100)]
 
     self.port = MockMidiPort()
-    self.midi_hub = midi_hub.MidiHub(self.port, self.port,
+    self.midi_hub = midi_hub.MidiHub([self.port], [self.port],
                                      midi_hub.TextureType.POLYPHONIC)
 
     # Burn in Sleeper for calibration.
@@ -138,8 +138,10 @@ class MidiHubTest(tf.test.TestCase):
     time.sleep(0.8)
 
     self.midi_hub.stop_metronome()
-    self.assertEqual(6, self.port.message_queue.qsize())
+    self.assertEqual(7, self.port.message_queue.qsize())
 
+    msg = self.port.message_queue.get()
+    self.assertEqual(msg.type, 'program_change')
     next_tick_time = start_time
     while not self.port.message_queue.empty():
       msg = self.port.message_queue.get()
@@ -162,13 +164,15 @@ class MidiHubTest(tf.test.TestCase):
     player = self.midi_hub.start_playback(seq, allow_updates=False)
     player.join()
 
-    # The first note will not be played since it started before `start_playback`
-    # is called.
-    del notes[0]
     note_events = []
     for note in notes:
       note_events.append((note.start, 'note_on', note.pitch))
       note_events.append((note.end, 'note_off', note.pitch))
+
+    # The first note on will not be sent since it started before
+    # `start_playback` is called.
+    del note_events[0]
+
     note_events = collections.deque(sorted(note_events))
     while not self.port.message_queue.empty():
       msg = self.port.message_queue.get()
@@ -201,7 +205,7 @@ class MidiHubTest(tf.test.TestCase):
     player = self.midi_hub.start_playback(seq, allow_updates=True)
 
     # Sleep past first note start.
-    concurrency.Sleeper().sleep(0.2)
+    concurrency.Sleeper().sleep_until(start_time + 0.2)
 
     new_seq = music_pb2.NoteSequence()
     notes = [Note(1, 100, 0.0, 0.8), Note(2, 100, 0.0, 1.0),
@@ -273,7 +277,7 @@ class MidiHubTest(tf.test.TestCase):
     start_time = 1.0
 
     threading.Timer(0.1, self.send_capture_messages).start()
-    self.midi_hub = midi_hub.MidiHub(self.port, self.port,
+    self.midi_hub = midi_hub.MidiHub([self.port], [self.port],
                                      midi_hub.TextureType.MONOPHONIC)
     captured_seq = self.midi_hub.capture_sequence(
         120, start_time,
@@ -335,6 +339,28 @@ class MidiHubTest(tf.test.TestCase):
         expected_seq, 0,
         [Note(1, 64, 2, 5), Note(2, 64, 3, 4), Note(3, 64, 4, 6)])
     self.assertProtoEquals(captured_seq_2, expected_seq)
+
+  def testStartCapture_IsDrum(self):
+    start_time = 1.0
+    captor = self.midi_hub.start_capture(120, start_time)
+
+    # Channels are 0-indexed in mido.
+    self.capture_messages[2].channel = 9
+    self.send_capture_messages()
+    time.sleep(0.1)
+
+    stop_time = 5.5
+    captor.stop(stop_time=stop_time)
+
+    captured_seq = captor.captured_sequence()
+    expected_seq = music_pb2.NoteSequence()
+    expected_seq.tempos.add(qpm=120)
+    expected_seq.total_time = stop_time
+    testing_lib.add_track_to_sequence(
+        expected_seq, 0,
+        [Note(1, 64, 2, 5), Note(2, 64, 3, 4), Note(3, 64, 4, stop_time)])
+    expected_seq.notes[0].is_drum = True
+    self.assertProtoEquals(captured_seq, expected_seq)
 
   def testStartCapture_MidCapture(self):
     start_time = 1.0
@@ -620,11 +646,12 @@ class MidiHubTest(tf.test.TestCase):
 
     passed_messages = []
     while not self.port.message_queue.empty():
-      passed_messages.append(self.port.message_queue.get())
-    self.assertListEqual(passed_messages, self.capture_messages)
+      passed_messages.append(self.port.message_queue.get().bytes())
+    self.assertListEqual(
+        passed_messages, [m.bytes() for m in self.capture_messages])
 
   def testPassThrough_Mono(self):
-    self.midi_hub = midi_hub.MidiHub(self.port, self.port,
+    self.midi_hub = midi_hub.MidiHub([self.port], [self.port],
                                      midi_hub.TextureType.MONOPHONIC)
     self.midi_hub.passthrough = False
     self.send_capture_messages()
@@ -669,6 +696,17 @@ class MidiHubTest(tf.test.TestCase):
     self.midi_hub.wait_for_event(timeout=0.3)
     self.assertAlmostEqual(time.time() - wait_start, 0.3, delta=0.01)
 
+  def testSendControlChange(self):
+    self.midi_hub.send_control_change(0, 1)
+
+    sent_messages = []
+    while not self.port.message_queue.empty():
+      sent_messages.append(self.port.message_queue.get())
+
+    self.assertListEqual(
+        sent_messages,
+        [mido.Message(type='control_change', control=0, value=1,
+                      time=sent_messages[0].time)])
 
 if __name__ == '__main__':
   tf.test.main()

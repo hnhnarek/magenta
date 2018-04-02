@@ -19,6 +19,7 @@ licenses(["notice"])  # Apache 2.0
 
 py_library(
     name = "midi",
+    srcs_version = "PY2AND3",
     visibility = [
         "//magenta/tools/pip:__subpackages__",
         # internal notebook binary
@@ -32,9 +33,11 @@ py_library(
 py_library(
     name = "midi_hub",
     srcs = ["midi_hub.py"],
+    srcs_version = "PY2AND3",
     deps = [
         "//magenta",
         "@mido//:mido",
+        # tensorflow dep
     ],
 )
 
@@ -53,6 +56,7 @@ py_test(
 py_library(
     name = "midi_interaction",
     srcs = ["midi_interaction.py"],
+    srcs_version = "PY2AND3",
     deps = [
         ":midi_hub",
         "//magenta",
@@ -63,11 +67,26 @@ py_library(
 py_binary(
     name = "magenta_midi",
     srcs = ["magenta_midi.py"],
+    srcs_version = "PY2AND3",
     visibility = ["//magenta/tools/pip:__subpackages__"],
     deps = [
         ":midi_hub",
         ":midi_interaction",
         "//magenta",
+        "//magenta/models/drums_rnn:drums_rnn_sequence_generator",
         "//magenta/models/melody_rnn:melody_rnn_sequence_generator",
+        "//magenta/models/performance_rnn:performance_sequence_generator",
+        "//magenta/models/pianoroll_rnn_nade:pianoroll_rnn_nade_sequence_generator",
+        "//magenta/models/polyphony_rnn:polyphony_sequence_generator",
+    ],
+)
+
+py_binary(
+    name = "midi_clock",
+    srcs = ["midi_clock.py"],
+    srcs_version = "PY2AND3",
+    visibility = ["//magenta/tools/pip:__subpackages__"],
+    deps = [
+        ":midi_hub",
     ],
 )

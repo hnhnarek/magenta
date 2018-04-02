@@ -21,11 +21,19 @@ licenses(["notice"])  # Apache 2.0
 py_library(
     name = "magenta",
     srcs = ["__init__.py"],
+    srcs_version = "PY2AND3",
     visibility = ["//magenta:__subpackages__"],
     deps = [
+        ":version",
         "//magenta/common",
         "//magenta/music",
         "//magenta/pipelines",
         "//magenta/protobuf",
     ],
+)
+
+py_library(
+    name = "version",
+    srcs = ["version.py"],
+    srcs_version = "PY2AND3",
 )

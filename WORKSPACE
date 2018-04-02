@@ -1,36 +1,29 @@
 new_http_archive(
-  name = "pretty_midi",
-  build_file = "pretty_midi.BUILD",
-  url = "https://github.com/craffel/pretty-midi/archive/0.2.6.tar.gz",
-  sha256 = "8326c9c87d5efc91670a5881581eb192b095a1c93afd5fddc91b2232af8e9b9b",
-  strip_prefix = "pretty-midi-0.2.6/pretty_midi",
+    name = "pretty_midi",
+    build_file = "pretty_midi.BUILD",
+    sha256 = "f359310473b3e1ed070beda08fbbd7564dc7fed26aec00f06bdb5088394ae4d2",
+    strip_prefix = "pretty-midi-0.2.8/pretty_midi",
+    url = "https://github.com/craffel/pretty-midi/archive/0.2.8.tar.gz",
+)
+
+http_archive(
+    name = "com_google_protobuf",
+    sha256 = "13d3c15ebfad8c28bee203dd4a0f6e600d2a7d2243bac8b5d0e517466500fcae",
+    strip_prefix = "protobuf-3.5.1",
+    url = "https://github.com/google/protobuf/releases/download/v3.5.1/protobuf-python-3.5.1.tar.gz",
 )
 
 new_http_archive(
-  name = "music21",
-  build_file = "music21.BUILD",
-  url = "https://github.com/cuthbertLab/music21/releases/download/v3.0.3-alpha/music21-3.0.3.tar.gz",
-  sha256 = "4c0cc1e1fa3638c53ecf45ec13301174114dcf59f93faffc6586c5b94ae065e3",
-  strip_prefix = "music21-3.0.3/music21",
-)
-
-git_repository(
-  name = "protobuf",
-  remote = "https://github.com/google/protobuf",
-  commit = "18a9140f3308272313a9642af58ab0051ac09fd2",
-)
-
-new_http_archive(
-  name = "six_archive",
-  build_file = "six.BUILD",
-  url = "https://pypi.python.org/packages/source/s/six/six-1.10.0.tar.gz#md5=34eed507548117b2ab523ab14b2f8b55",
-  sha256 = "105f8d68616f8248e24bf0e9372ef04d3cc10104f1980f54d57b2ce73a5ad56a",
-  strip_prefix = "six-1.10.0"
+    name = "six_archive",
+    build_file = "six.BUILD",
+    sha256 = "105f8d68616f8248e24bf0e9372ef04d3cc10104f1980f54d57b2ce73a5ad56a",
+    strip_prefix = "six-1.10.0",
+    url = "https://pypi.python.org/packages/source/s/six/six-1.10.0.tar.gz#md5=34eed507548117b2ab523ab14b2f8b55",
 )
 
 bind(
-  name = "six",
-  actual = "@six_archive//:six",
+    name = "six",
+    actual = "@six_archive//:six",
 )
 
 bind(
@@ -41,7 +34,7 @@ bind(
 new_http_archive(
     name = "mido",
     build_file = "mido.BUILD",
-    url = "https://github.com/olemb/mido/archive/1.1.17.tar.gz",
-    sha256 = "7844ff77ab12469504c46e9aa035722a2829e7c72b8b6241c78d356895e88114",
-    strip_prefix = "mido-1.1.17/mido",
+    sha256 = "870d2f470ce1123324f9ef9676b6c9f2580293dd2a07fdfe00e20a47740e8b8e",
+    strip_prefix = "mido-1.2.6/mido",
+    url = "https://github.com/olemb/mido/archive/1.2.6.tar.gz",
 )

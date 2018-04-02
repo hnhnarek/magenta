@@ -25,11 +25,31 @@ licenses(["notice"])  # Apache 2.0
 py_library(
     name = "common",
     srcs = ["__init__.py"],
+    srcs_version = "PY2AND3",
     deps = [
+        ":beam_search",
         ":concurrency",
+        ":nade",
         ":sequence_example_lib",
+        ":state_util",
         ":testing_lib",
-        ":tf_lib",
+        ":tf_utils",
+    ],
+)
+
+py_library(
+    name = "beam_search",
+    srcs = ["beam_search.py"],
+    srcs_version = "PY2AND3",
+)
+
+py_test(
+    name = "beam_search_test",
+    srcs = ["beam_search_test.py"],
+    srcs_version = "PY2AND3",
+    deps = [
+        ":beam_search",
+        # tensorflow dep
     ],
 )
 
@@ -41,10 +61,33 @@ py_library(
 
 py_test(
     name = "concurrency_test",
+    size = "small",
     srcs = ["concurrency_test.py"],
     srcs_version = "PY2AND3",
     deps = [
         ":concurrency",
+        # tensorflow dep
+    ],
+)
+
+py_library(
+    name = "nade",
+    srcs = ["nade.py"],
+    srcs_version = "PY2AND3",
+    deps = [
+        # numpy dep
+        # tensorflow dep
+    ],
+)
+
+py_test(
+    name = "nade_test",
+    size = "small",
+    srcs = ["nade_test.py"],
+    srcs_version = "PY2AND3",
+    deps = [
+        ":nade",
+        # numpy dep
         # tensorflow dep
     ],
 )
@@ -59,16 +102,42 @@ py_library(
 )
 
 py_library(
+    name = "state_util",
+    srcs = ["state_util.py"],
+    srcs_version = "PY2AND3",
+    deps = [
+        # numpy dep
+        # tensorflow dep
+    ],
+)
+
+py_test(
+    name = "state_util_test",
+    size = "small",
+    srcs = ["state_util_test.py"],
+    srcs_version = "PY2AND3",
+    deps = [
+        ":state_util",
+        # numpy dep
+        # tensorflow dep
+    ],
+)
+
+py_library(
     name = "testing_lib",
     srcs = ["testing_lib.py"],
+    srcs_version = "PY2AND3",
     deps = [
-        "@protobuf//:protobuf_python",
+        "@com_google_protobuf//:protobuf_python",
         # numpy dep
     ],
 )
 
 py_library(
-    name = "tf_lib",
-    srcs = ["tf_lib.py"],
+    name = "tf_utils",
+    srcs = ["tf_utils.py"],
     srcs_version = "PY2AND3",
+    deps = [
+        # tensorflow dep
+    ],
 )

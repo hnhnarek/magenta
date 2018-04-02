@@ -37,12 +37,9 @@ class BaseModel(object):
 
   @abc.abstractmethod
   def _build_graph_for_generation(self):
-    """Builds and returns the model graph for generation.
+    """Builds the model graph for generation.
 
     Will be called before restoring a checkpoint file.
-
-    Returns:
-      The tf.Graph object.
     """
     pass
 
@@ -55,8 +52,8 @@ class BaseModel(object):
     Args:
       checkpoint_file: The path to the checkpoint file that should be used.
     """
-    graph = self._build_graph_for_generation()
-    with graph.as_default():
+    with tf.Graph().as_default():
+      self._build_graph_for_generation()
       saver = tf.train.Saver()
       self._session = tf.Session()
       tf.logging.info('Checkpoint used: %s', checkpoint_file)
@@ -82,7 +79,7 @@ class BaseModel(object):
       checkpoint_filename: Path to the checkpoint file.
     """
     with self._session.graph.as_default():
-      saver = tf.train.Saver(sharded=False)
+      saver = tf.train.Saver(sharded=False, write_version=tf.train.SaverDef.V1)
       saver.save(self._session, checkpoint_filename, meta_graph_suffix='meta',
                  write_meta_graph=True)
 
@@ -90,4 +87,3 @@ class BaseModel(object):
     """Closes the TF session."""
     self._session.close()
     self._session = None
-

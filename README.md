@@ -1,12 +1,26 @@
-<img src="http://magenta.tensorflow.org/assets/magenta-logo.png" height="75">
+<img src="magenta-logo-bg.png" height="75">
 
-**Magenta** is a project from the [Google Brain team](https://research.google.com/teams/brain/)
-that asks: Can we use machine learning to create compelling art and music? If
-so, how? If not, why not?  We’ll use [TensorFlow](https://www.tensorflow.org),
-and we’ll release our models and tools in open source on this GitHub. We’ll also
-post demos, tutorial blog postings, and technical papers. If you’d like to keep
-up on Magenta as it grows, you can read our [blog](http://magenta.tensorflow.org) and or join our
-[discussion group](http://groups.google.com/a/tensorflow.org/forum/#!forum/magenta-discuss).
+**Magenta** is a research project exploring the role of machine learning
+in the process of creating art and music.  Primarily this
+involves developing new deep learning and reinforcement learning
+algorithms for generating songs, images, drawings, and other materials. But it's also
+an exploration in building smart tools and interfaces that allow
+artists and musicians to extend (not replace!) their processes using
+these models.  Magenta was started by some researchers and engineers
+from the [Google Brain team](https://research.google.com/teams/brain/)
+but many others have contributed significantly to the project. We use
+[TensorFlow](https://www.tensorflow.org) and release our models and
+tools in open source on this GitHub.  If you’d like to learn more
+about Magenta, check out our [blog](https://magenta.tensorflow.org),
+where we post technical details.  You can also join our [discussion
+group](https://groups.google.com/a/tensorflow.org/forum/#!forum/magenta-discuss).
+
+## Getting Started
+
+* [Installation](#installation)
+* [Using Magenta](#using-magenta)
+* [Playing a MIDI Instrument](#playing-a-midi-instrument)
+* [Development Environment (Advanced)](#development-environment)
 
 ## Installation
 
@@ -14,8 +28,10 @@ up on Magenta as it grows, you can read our [blog](http://magenta.tensorflow.org
 
 Magenta maintains a [pip package](https://pypi.python.org/pypi/magenta) for easy
 installation. We recommend using Anaconda to install it, but it can work in any
-standard Python 2.7 environment. These instructions will assume you are using
-Anaconda.
+standard Python environment. We support both Python 2 (>= 2.7) and Python 3 (>= 3.5).
+These instructions will assume you are using Anaconda.
+
+Note that if you want to enable GPU support, you should follow the [GPU Installation](#gpu-installation) instructions below.
 
 #### Automated Install
 
@@ -23,13 +39,17 @@ If you are running Mac OS X or Ubuntu, you can try using our automated
 installation script. Just paste the following command into your terminal.
 
 ```
-curl https://raw.githubusercontent.com/tensorflow/magenta/master/magenta/tools/install.sh | bash
+curl https://raw.githubusercontent.com/tensorflow/magenta/master/magenta/tools/magenta-install.sh > /tmp/magenta-install.sh
+bash /tmp/magenta-install.sh
 ```
+
+After the script completes, open a new terminal window so the environment
+variable changes take effect.
 
 The Magenta libraries are now available for use within Python programs and
 Jupyter notebooks, and the Magenta scripts are installed in your path!
 
-Note that you will need to run `source activate magenta` to use Magneta every
+Note that you will need to run `source activate magenta` to use Magenta every
 time you open a new terminal window.
 
 #### Manual Install
@@ -49,25 +69,44 @@ conda create -n magenta python=2.7 jupyter
 source activate magenta
 ```
 
-Install the
-[latest Tensorflow Pip package](https://www.tensorflow.org/get_started/os_setup.html#using-pip)
-for Python 2.7.  Note that you should skip the step for activating the
-`tensorflow` environment because you've already activated your `magenta`
-environment above. The important steps are selecting the correct binary
-(`export TF_BINARY_URL=...`) and installing that binary
-(`pip install --ignore-installed --upgrade $TF_BINARY_URL`).
-
 Install the Magenta pip package:
 
 ```
 pip install magenta
 ```
 
+Note that in order to install the `rtmidi` package that we depend on, you may need to install headers for some sound libraries. On Linux, this command should install the necessary packages:
+
+```
+sudo apt-get install build-essential libasound2-dev libjack-dev
+```
+
 The Magenta libraries are now available for use within Python programs and
 Jupyter notebooks, and the Magenta scripts are installed in your path!
 
-Note that you will need to run `source activate magenta` to use Magneta every
+Note that you will need to run `source activate magenta` to use Magenta every
 time you open a new terminal window.
+
+#### GPU Installation
+
+If you have a GPU installed and you want Magenta to use it, you will need to
+follow the [Manual Install](#manual-install) instructions, but with a few
+modifications.
+
+First, make sure your system meets the [requirements to run tensorflow with GPU support](
+https://www.tensorflow.org/install/install_linux#nvidia_requirements_to_run_tensorflow_with_gpu_support).
+
+Next, follow the [Manual Install](#manual-install) instructions, but install the
+`magenta-gpu` package instead of the `magenta` package:
+
+```
+pip install magenta-gpu
+```
+
+The only difference between the two packages is that `magenta-gpu` depends on
+`tensorflow-gpu` instead of `tensorflow`.
+
+Magenta should now have access to your GPU.
 
 ### Docker
 Another way to try out Magenta is to use our Docker container.
@@ -95,6 +134,7 @@ The Docker image also includes several pre-trained models in
 
 ```
 melody_rnn_generate \
+  --config=lookback_rnn \
   --bundle_file=/magenta-models/lookback_rnn.mag \
   --output_dir=/magenta-data/lookback_rnn/generated \
   --num_outputs=10 \
@@ -114,16 +154,26 @@ machine. Similarly, because our
 MIDI port, it will not work within the Docker container. You'll need to use the
 full Development Environment.
 
+You may find at some point after installation that we have released a new version of Magenta and your Docker image is out of date. To update the image to the latest version, run:
+
+```
+docker pull tensorflow/magenta
+```
+
 Note: Our Docker image is also available at `gcr.io/tensorflow/magenta`.
 
-## Generating MIDI
+## Using Magenta
 
-You can now create your own melodies with TensorFlow using one of the various configurations of our
-[Melody RNN](magenta/models/melody_rnn) model; a recurrent neural network for predicting melodies.
+You can now train our various models and use them to generate music, audio, and images. You can
+find instructions for each of the models by exploring the [models directory](magenta/models).
 
-## Using a MIDI Instrument
+To get started, create your own melodies with TensorFlow using one of the various configurations of our [Melody RNN](magenta/models/melody_rnn) model; a recurrent neural network for predicting melodies.
+
+## Playing a MIDI Instrument
 
 After you've trained one of the models above, you can use our [MIDI interface](magenta/interfaces/midi) to play with it interactively.
+
+We also have created several [demos](https://github.com/tensorflow/magenta-demos) that provide a UI for this interface, making it easier to use (e.g., the browser-based [AI Jam](https://github.com/tensorflow/magenta-demos/tree/master/ai-jam-js)).
 
 ## Development Environment
 If you want to develop on Magenta, you'll need to set up the full Development
@@ -137,19 +187,30 @@ First, clone this repository:
 git clone https://github.com/tensorflow/magenta.git
 ```
 
-Next, [install Bazel](https://bazel.build/docs/install.html). We recommend the
-latest version, currently 0.3.1 (**Note:** We're
-[investigating a problem](https://github.com/bazelbuild/bazel/issues/1997) with
-Bazel 0.3.2 and recommend staying with 0.3.1 until we find a solution).
+Next, [install Bazel](https://bazel.build/docs/install.html). We require the
+latest version, currently 0.4.5.
+
+You will also need to install some required python dependencies. We recommend
+using a conda environment and installing with pip:
+
+```
+pip install matplotlib scipy bokeh IPython pandas
+```
 
 Finally,
 [install TensorFlow](https://www.tensorflow.org/get_started/os_setup.html).
-We require version 0.10 or later.
+To see what version of TensorFlow the code currently requires, check the
+dependency listed in [setup.py](magenta/tools/pip/setup.py).
 
-Also, verify that your environment uses Python 2.7. We do aim to support
-Python 3 eventually, but it is currently experimental.
+Also, verify that your environment uses a supported Python version: >=2.7 for Python 2 or >=3.5 for Python 3.
 
-After that's done, run the tests with this command:
+After that's done, change directory to `./magenta` or your clone path:
+
+```
+cd ./magenta
+```
+
+And then run the tests with this command:
 
 ```
 bazel test //magenta/...
